@@ -823,7 +823,7 @@ const docTemplate = `{
                         "BasicAuth": []
                     }
                 ],
-                "description": "Allow to get or set server settings.",
+                "description": "Get or set server settings. speed_get returns configured/effective download limits in KB/s; speed_set changes the live limit using download_rate_limit and optional temporary; speed_restore removes a temporary override.",
                 "consumes": [
                     "application/json"
                 ],
@@ -836,7 +836,7 @@ const docTemplate = `{
                 "summary": "Get / Set server settings",
                 "parameters": [
                     {
-                        "description": "Settings request. Available params for action: get, set, def",
+                        "description": "Settings request. Available actions: get, set, def, speed_get, speed_set, speed_restore",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1937,8 +1937,14 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "download_rate_limit": {
+                    "type": "integer"
+                },
                 "sets": {
                     "$ref": "#/definitions/settings.BTSets"
+                },
+                "temporary": {
+                    "type": "boolean"
                 }
             }
         },

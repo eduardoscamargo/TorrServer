@@ -15,6 +15,7 @@ import (
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/wlynxg/anet"
+	"golang.org/x/time/rate"
 
 	"server/settings"
 	"server/torr/storage/torrstor"
@@ -23,8 +24,10 @@ import (
 )
 
 type BTServer struct {
-	config *torrent.ClientConfig
-	client *torrent.Client
+	config           *torrent.ClientConfig
+	client           *torrent.Client
+	downloadLimiter  *rate.Limiter
+	downloadOverride *int
 
 	storage *torrstor.Storage
 
@@ -131,9 +134,12 @@ func (bt *BTServer) configure() {
 	// 	RequirePreferred: settings.BTsets.ForceEncrypt, //	NE
 	// 	Preferred:        true,                         //	NE
 	// } //	NE
-	if settings.BTsets.DownloadRateLimit > 0 {
-		bt.config.DownloadRateLimiter = utils.Limit(settings.BTsets.DownloadRateLimit * 1024)
+	downloadLimit := settings.BTsets.DownloadRateLimit
+	if bt.downloadOverride != nil {
+		downloadLimit = *bt.downloadOverride
 	}
+	bt.downloadLimiter = utils.Limit(downloadLimit * 1024)
+	bt.config.DownloadRateLimiter = bt.downloadLimiter
 	if settings.BTsets.UploadRateLimit > 0 {
 		bt.config.Seed = true
 		bt.config.UploadRateLimiter = utils.Limit(settings.BTsets.UploadRateLimit * 1024)
@@ -203,6 +209,31 @@ func (bt *BTServer) configure() {
 	if bt.config.PublicIp6 != nil {
 		log.Println("PublicIp6:", bt.config.PublicIp6)
 	}
+}
+
+// SetLiveDownloadLimit keeps the limiter pointer already used by peer readers.
+// A temporary limit lasts until it is replaced or the server process exits.
+func (bt *BTServer) SetLiveDownloadLimit(limitKB int, temporary bool) {
+	bt.mu.Lock()
+	defer bt.mu.Unlock()
+	if temporary {
+		value := limitKB
+		bt.downloadOverride = &value
+	} else {
+		bt.downloadOverride = nil
+	}
+	if bt.downloadLimiter != nil {
+		utils.UpdateLimit(bt.downloadLimiter, limitKB*1024)
+	}
+}
+
+func (bt *BTServer) DownloadLimitOverride() (int, bool) {
+	bt.mu.RLock()
+	defer bt.mu.RUnlock()
+	if bt.downloadOverride == nil {
+		return 0, false
+	}
+	return *bt.downloadOverride, true
 }
 
 func (bt *BTServer) configureProxy() error {

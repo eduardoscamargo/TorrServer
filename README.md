@@ -429,6 +429,14 @@ Standard binaries serve a filtered Swagger spec at runtime (only `/gst/settings`
 
 API documentation is hosted as Swagger format available at path `/swagger/index.html`.
 
+### Live download speed limit
+
+The web UI has a **Download speed limit** control in the sidebar. Presets and a custom limit change the global BitTorrent download rate immediately, without disconnecting torrents. The custom value is in KB/s; `0` means unlimited. This limit also applies to torrent data fetched while Stremio is playing, so a low value can cause buffering.
+
+**Unlimited for now** temporarily overrides the saved limit. **Restore saved limit** removes the override. The temporary value is lost on server restart or when the full settings form is saved.
+
+The same control is available through `POST /settings` with `{"action":"speed_get"}` or `{"action":"speed_set","download_rate_limit":5120,"temporary":false}`. These actions return `configured_kb`, `effective_kb`, and `temporary`. Set `temporary` to `true` for an in-memory override; omit it or set it to `false` to save a new limit and remove any override. `{"action":"speed_restore"}` removes an override without writing settings. Authentication follows the other `/settings` actions.
+
 ### MCP (AI agents)
 
 TorrServer exposes a native [Model Context Protocol](https://modelcontextprotocol.io/) server at **`/mcp`** on the same HTTP(S) port as the web UI (default `8090`). OpenClaw, Hermes, and other MCP clients can list, add, and manage torrents, and get a play URL for the next unwatched TV episode. The REST API is unchanged.

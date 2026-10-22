@@ -11,6 +11,7 @@ import RemoveAll from 'components/RemoveAll'
 import AboutDialog from 'components/About'
 import CloseServer from 'components/CloseServer'
 import SearchDialogButton from 'components/Search'
+import SpeedLimitControl from 'components/SpeedLimitControl'
 import { memo } from 'react'
 import CheckIcon from '@material-ui/icons/Check'
 import ClearIcon from '@material-ui/icons/Clear'
@@ -62,6 +63,7 @@ const Sidebar = ({ isDrawerOpen, setIsDonationDialogOpen, isOffline, isLoading, 
       <Divider />
 
       <List>
+        <SpeedLimitControl isOffline={isOffline} isLoading={isLoading} />
         <SettingsDialog isOffline={isOffline} isLoading={isLoading} />
 
         <AboutDialog />

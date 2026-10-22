@@ -1,11 +1,14 @@
 package torr
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -17,6 +20,65 @@ import (
 )
 
 var bts *BTServer
+var settingsChangeMu sync.Mutex
+
+type DownloadSpeedLimitState struct {
+	ConfiguredKB int  `json:"configured_kb"`
+	EffectiveKB  int  `json:"effective_kb"`
+	Temporary    bool `json:"temporary"`
+}
+
+func downloadSpeedLimitState() DownloadSpeedLimitState {
+	state := DownloadSpeedLimitState{}
+	if sets.BTsets != nil {
+		state.ConfiguredKB = sets.BTsets.DownloadRateLimit
+		state.EffectiveKB = state.ConfiguredKB
+	}
+	if bts != nil {
+		if override, ok := bts.DownloadLimitOverride(); ok {
+			state.EffectiveKB = override
+			state.Temporary = true
+		}
+	}
+	return state
+}
+
+func GetDownloadSpeedLimit() DownloadSpeedLimitState {
+	settingsChangeMu.Lock()
+	defer settingsChangeMu.Unlock()
+	return downloadSpeedLimitState()
+}
+
+// UpdateDownloadSpeedLimit changes the existing torrent client's limiter.
+// Temporary changes are kept only in memory and can be restored by sending the
+// configured value with temporary=false.
+func UpdateDownloadSpeedLimit(limitKB int, temporary bool) (DownloadSpeedLimitState, error) {
+	settingsChangeMu.Lock()
+	defer settingsChangeMu.Unlock()
+	if limitKB < 0 || limitKB > int(^uint(0)>>1)/1024 {
+		return DownloadSpeedLimitState{}, errors.New("invalid download speed limit")
+	}
+	if sets.BTsets == nil || bts == nil {
+		return DownloadSpeedLimitState{}, errors.New("torrent client is not initialized")
+	}
+	if !temporary {
+		if err := sets.SetDownloadRateLimit(limitKB); err != nil {
+			return DownloadSpeedLimitState{}, err
+		}
+	}
+	bts.SetLiveDownloadLimit(limitKB, temporary)
+	return downloadSpeedLimitState(), nil
+}
+
+func RestoreDownloadSpeedLimit() (DownloadSpeedLimitState, error) {
+	settingsChangeMu.Lock()
+	defer settingsChangeMu.Unlock()
+	if sets.BTsets == nil || bts == nil {
+		return DownloadSpeedLimitState{}, errors.New("torrent client is not initialized")
+	}
+	bts.SetLiveDownloadLimit(sets.BTsets.DownloadRateLimit, false)
+	return downloadSpeedLimitState(), nil
+}
 
 // bts is read by request handlers without any synchronisation of their own, so it
 // must be written exactly once. Connect calls this on every settings save with the
@@ -245,11 +307,30 @@ func DropTorrent(hashHex string) {
 }
 
 func SetSettings(set *sets.BTSets) {
+	settingsChangeMu.Lock()
+	defer settingsChangeMu.Unlock()
 	if sets.ReadOnly {
 		log.TLogln("API SetSettings: Read-only DB mode!")
 		return
 	}
+	if set == nil {
+		log.TLogln("API SetSettings: settings are missing")
+		return
+	}
+	if sets.BTsets != nil {
+		unchanged := *sets.BTsets
+		unchanged.DownloadRateLimit = set.DownloadRateLimit
+		if reflect.DeepEqual(unchanged, *set) {
+			if err := sets.SetDownloadRateLimit(set.DownloadRateLimit); err != nil {
+				log.TLogln("API SetSettings: failed to save download limit:", err)
+				return
+			}
+			bts.SetLiveDownloadLimit(set.DownloadRateLimit, false)
+			return
+		}
+	}
 	sets.SetBTSets(set)
+	bts.SetLiveDownloadLimit(set.DownloadRateLimit, false)
 	utils.InvalidateTrackersCache()
 	log.TLogln("drop all torrents")
 	dropAllTorrent()
@@ -284,11 +365,14 @@ func reconnect() {
 }
 
 func SetDefSettings() {
+	settingsChangeMu.Lock()
+	defer settingsChangeMu.Unlock()
 	if sets.ReadOnly {
 		log.TLogln("API SetDefSettings: Read-only DB mode!")
 		return
 	}
 	sets.SetDefaultConfig()
+	bts.SetLiveDownloadLimit(sets.BTsets.DownloadRateLimit, false)
 	utils.InvalidateTrackersCache()
 	log.TLogln("drop all torrents")
 	dropAllTorrent()

@@ -2,6 +2,7 @@ package settings
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"path/filepath"
@@ -195,6 +196,26 @@ func SetBTSets(sets *BTSets) {
 		return
 	}
 	tdb.Set("Settings", "BitTorr", buf)
+}
+
+// SetDownloadRateLimit persists only the download limit. It avoids the disk
+// path scan and torrent reconnect performed by a full settings update.
+func SetDownloadRateLimit(limitKB int) error {
+	if ReadOnly {
+		return errors.New("settings are read-only")
+	}
+	if BTsets == nil {
+		return errors.New("settings are not initialized")
+	}
+	next := *BTsets
+	next.DownloadRateLimit = limitKB
+	buf, err := json.Marshal(&next)
+	if err != nil {
+		return err
+	}
+	tdb.Set("Settings", "BitTorr", buf)
+	BTsets = &next
+	return nil
 }
 
 func SetDefaultConfig() {

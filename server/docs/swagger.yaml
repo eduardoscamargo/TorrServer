@@ -96,8 +96,12 @@ definitions:
     properties:
       action:
         type: string
+      download_rate_limit:
+        type: integer
       sets:
         $ref: '#/definitions/settings.BTSets'
+      temporary:
+        type: boolean
     type: object
   api.torrReqJS:
     properties:
@@ -1130,9 +1134,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: Allow to get or set server settings.
+      description: Get or set server settings. speed_get returns configured/effective
+        download limits in KB/s; speed_set changes the live limit using download_rate_limit
+        and optional temporary; speed_restore removes a temporary override.
       parameters:
-      - description: 'Settings request. Available params for action: get, set, def'
+      - description: 'Settings request. Available actions: get, set, def, speed_get,
+          speed_set, speed_restore'
         in: body
         name: request
         required: true

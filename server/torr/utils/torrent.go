@@ -303,14 +303,25 @@ func PeerIDRandom(peer string) string {
 
 func Limit(i int) *rate.Limiter {
 	l := rate.NewLimiter(rate.Inf, 0)
+	UpdateLimit(l, i)
+	return l
+}
+
+// UpdateLimit changes a live limiter without replacing the pointer held by peers.
+// A zero rate means unlimited. The burst must fit a full BitTorrent chunk.
+func UpdateLimit(l *rate.Limiter, i int) {
+	now := time.Now()
 	if i > 0 {
 		b := i
 		if b < 16*1024 {
 			b = 16 * 1024
 		}
-		l = rate.NewLimiter(rate.Limit(i), b)
+		l.SetBurstAt(now, b)
+		l.SetLimitAt(now, rate.Limit(i))
+	} else {
+		l.SetLimitAt(now, rate.Inf)
+		l.SetBurstAt(now, 0)
 	}
-	return l
 }
 
 func OpenTorrentFile(path string) (*torrent.TorrentSpec, error) {
