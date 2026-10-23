@@ -73,6 +73,9 @@ func (bt *BTServer) Connect() error {
 	bt.client, err = torrent.NewClient(bt.config)
 	bt.torrents = make(map[metainfo.Hash]*Torrent)
 	InitApiHelper(bt)
+	if err == nil && settings.BTsets.UseDisk {
+		go restorePinnedTorrents(bt)
+	}
 
 	return err
 }

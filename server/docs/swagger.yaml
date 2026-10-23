@@ -111,6 +111,8 @@ definitions:
         type: string
       data:
         type: string
+      file_id:
+        type: integer
       hash:
         type: string
       link:
@@ -449,12 +451,18 @@ definitions:
     type: object
   state.TorrentFileStat:
     properties:
+      complete:
+        type: boolean
+      downloaded:
+        type: integer
       id:
         type: integer
       length:
         type: integer
       path:
         type: string
+      pinned:
+        type: boolean
     type: object
   state.TorrentStat:
     enum:
@@ -1632,12 +1640,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: Allow to list, add, remove, get, set, drop, wipe torrents on server.
-        The action depends of what has been asked.
+      description: Allow to list, add, remove, get, set, drop, wipe torrents, and
+        pin or unpin a file on server. The action depends of what has been asked.
       parameters:
-      - description: 'Torrent request. Available params for action: add, get, set,
-          rem, list, drop, wipe. link required for add, hash required for get, set,
-          rem, drop.'
+      - description: 'Torrent request. Available actions: add, get, set, rem, list,
+          drop, wipe, pin, unpin. link required for add; hash required for get, set,
+          rem, drop, pin, unpin; file_id required for pin and unpin.'
         in: body
         name: request
         required: true

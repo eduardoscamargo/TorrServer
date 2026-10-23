@@ -27,8 +27,9 @@ type Cache struct {
 	filled   int64
 	hash     metainfo.Hash
 
-	pieceLength int64
-	pieceCount  int
+	pieceLength   int64
+	pieceCount    int
+	torrentLength int64
 
 	// pieces content is immutable after Init; muPieces guards the map
 	// reference itself (nilled in Close), so holders of a snapshot may
@@ -47,6 +48,7 @@ type Cache struct {
 	// freshly created reader has already set.
 	muPrio  sync.Mutex
 	torrent *torrent.Torrent
+	pinned  map[int]bool // protected by muPrio
 }
 
 func NewCache(capacity int64, storage *Storage) *Cache {
@@ -56,6 +58,7 @@ func NewCache(capacity int64, storage *Storage) *Cache {
 		pieces:   make(map[int]*Piece),
 		storage:  storage,
 		readers:  make(map[*Reader]struct{}),
+		pinned:   make(map[int]bool),
 	}
 
 	return ret
@@ -69,6 +72,13 @@ func (c *Cache) Init(info *metainfo.Info, hash metainfo.Hash) {
 
 	c.pieceLength = info.PieceLength
 	c.pieceCount = info.NumPieces()
+	c.torrentLength = info.Length
+	if len(info.Files) > 0 {
+		c.torrentLength = 0
+		for _, file := range info.Files {
+			c.torrentLength += file.Length
+		}
+	}
 	c.hash = hash
 
 	if settings.BTsets.UseDisk {
@@ -104,7 +114,9 @@ func (c *Cache) priorityWatchdog() {
 		if c.torrent == nil {
 			continue
 		}
-		if c.GetUseReaders() > 0 {
+		if c.hasPins() {
+			c.cleanPieces()
+		} else if c.GetUseReaders() > 0 {
 			c.getRemPieces()
 		}
 	}
@@ -115,6 +127,64 @@ func (c *Cache) SetTorrent(torr *torrent.Torrent) {
 		return
 	}
 	c.torrent = torr
+}
+
+func (c *Cache) hasPins() bool {
+	c.muPrio.Lock()
+	defer c.muPrio.Unlock()
+	return len(c.pinned) > 0
+}
+
+func (c *Cache) HasPins() bool { return c != nil && c.hasPins() }
+
+// SetPinnedPieces replaces the protected piece set. The caller supplies all
+// selected files, so shared boundary pieces remain protected after one is unpinned.
+func (c *Cache) SetPinnedPieces(ids map[int]bool) {
+	c.muPrio.Lock()
+	c.pinned = ids
+	c.muPrio.Unlock()
+	c.clearPriority()
+	c.prioritizePins()
+}
+
+func (c *Cache) prioritizePins() {
+	c.muPrio.Lock()
+	defer c.muPrio.Unlock()
+	if c.torrent == nil || c.isClosed.Load() {
+		return
+	}
+	limit := settings.BTsets.ConnectionsLimit
+	if limit < 1 {
+		limit = 1
+	}
+	for id := 0; id < c.pieceCount && limit > 0; id++ {
+		if c.pinned[id] && !c.getPieces()[id].Completion().Complete {
+			if c.torrent.PieceState(id).Priority == torrent.PiecePriorityNone {
+				c.torrent.Piece(id).SetPriority(torrent.PiecePriorityNormal)
+			}
+			limit--
+		}
+	}
+}
+
+// CompletedPinnedBytes counts only verified pieces and clips shared edge pieces
+// to the requested file's byte interval.
+func (c *Cache) CompletedPinnedBytes(offset, length int64) int64 {
+	if length <= 0 {
+		return 0
+	}
+	var total int64
+	end := offset + length
+	for id := int(offset / c.pieceLength); id <= int((end-1)/c.pieceLength); id++ {
+		piece := c.getPieces()[id]
+		if piece == nil || !piece.Completion().Complete {
+			continue
+		}
+		startByte := int64(id) * c.pieceLength
+		from, to := max(offset, startByte), min(end, startByte+c.pieceLength)
+		total += to - from
+	}
+	return total
 }
 
 func (c *Cache) getPieces() map[int]*Piece {
@@ -150,7 +220,7 @@ func (c *Cache) Close() error {
 
 	c.storage.removeCache(c.hash)
 
-	if settings.BTsets.RemoveCacheOnDrop {
+	if settings.BTsets.RemoveCacheOnDrop && !c.hasPins() {
 		name := filepath.Join(settings.BTsets.TorrentsSavePath, c.hash.HexString())
 		if name != "" && name != "/" {
 			for _, v := range c.getPieces() {
@@ -249,10 +319,19 @@ func (c *Cache) cleanPieces() {
 	defer func() { c.isRemove.Store(false) }()
 
 	remPieces := c.getRemPieces()
+	c.prioritizePins()
 	if c.filled > c.capacity {
 		rems := (c.filled-c.capacity)/c.pieceLength + 1
 		for _, p := range remPieces {
-			c.removePiece(p)
+			c.muPrio.Lock()
+			pinned := c.pinned[p.Id]
+			if !pinned {
+				c.removePiece(p)
+			}
+			c.muPrio.Unlock()
+			if pinned {
+				continue
+			}
 			rems--
 			if rems <= 0 {
 				utils.FreeOSMemGC()
@@ -280,8 +359,14 @@ func (c *Cache) getRemPieces() []*Piece {
 
 	// Determine which chunks can be deleted
 	for id, p := range c.getPieces() {
+		c.muPrio.Lock()
+		pinned := c.pinned[id]
+		c.muPrio.Unlock()
 		if p.Size > 0 {
 			fill += p.Size
+		}
+		if pinned {
+			continue
 		}
 		if len(ranges) > 0 {
 			if !inRanges(ranges, id) {
@@ -435,6 +520,9 @@ func (c *Cache) clearPriority() {
 	ranges = mergeRange(ranges)
 
 	for id := range c.getPieces() {
+		if c.pinned[id] {
+			continue
+		}
 		if len(ranges) > 0 {
 			if !inRanges(ranges, id) {
 				if c.torrent.PieceState(id).Priority != torrent.PiecePriorityNone {

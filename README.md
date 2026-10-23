@@ -437,6 +437,12 @@ The web UI has a **Download speed limit** control in the sidebar. Presets and a 
 
 The same control is available through `POST /settings` with `{"action":"speed_get"}` or `{"action":"speed_set","download_rate_limit":5120,"temporary":false}`. These actions return `configured_kb`, `effective_kb`, and `temporary`. Set `temporary` to `true` for an in-memory override; omit it or set it to `false` to save a new limit and remove any override. `{"action":"speed_restore"}` removes an override without writing settings. Authentication follows the other `/settings` actions.
 
+### Keep a selected file for later playback
+
+With disk cache enabled (`UseDisk` and `TorrentsSavePath` in settings), the torrent details view offers **Download and keep** for each playable file. TorrServer downloads the selected file in the background, protects its pieces from cache eviction, and shows downloaded bytes until it is complete. The file remains available through its usual `/play` or `/stream` URL, including Stremio links. The selection is saved with the torrent and resumed after a server restart. **Stop keeping** removes the protection; normal cache eviction can then reclaim its pieces. Removing the torrent deletes the saved selection and cached data.
+
+API clients can send `POST /torrents` with `{"action":"pin","hash":"<info hash>","file_id":1}` or `{"action":"unpin","hash":"<info hash>","file_id":1}`. File IDs match `file_stats[].id` and `/play` indexes. The response includes `file_stats[].pinned`, `downloaded` (bytes), and `complete`. Pinning requires writable settings and disk cache storage.
+
 ### MCP (AI agents)
 
 TorrServer exposes a native [Model Context Protocol](https://modelcontextprotocol.io/) server at **`/mcp`** on the same HTTP(S) port as the web UI (default `8090`). OpenClaw, Hermes, and other MCP clients can list, add, and manage torrents, and get a play URL for the next unwatched TV episode. The REST API is unchanged.

@@ -17,8 +17,9 @@ type TorrentDB struct {
 	Poster   string `json:"poster,omitempty"`
 	Data     string `json:"data,omitempty"`
 
-	Timestamp int64 `json:"timestamp,omitempty"`
-	Size      int64 `json:"size,omitempty"`
+	Timestamp   int64 `json:"timestamp,omitempty"`
+	Size        int64 `json:"size,omitempty"`
+	PinnedFiles []int `json:"pinned_files,omitempty"`
 }
 
 type File struct {
@@ -54,6 +55,9 @@ func AddTorrent(torr *TorrentDB) {
 }
 
 func ListTorrent() []*TorrentDB {
+	if tdb == nil {
+		return nil
+	}
 	// Use read lock to prevent migration during read
 	dbMigrationLock.RLock()
 	defer dbMigrationLock.RUnlock()
@@ -77,6 +81,16 @@ func ListTorrent() []*TorrentDB {
 		return list[i].Timestamp > list[j].Timestamp
 	})
 	return list
+}
+
+func ListPinnedTorrents() []*TorrentDB {
+	var pinned []*TorrentDB
+	for _, db := range ListTorrent() {
+		if len(db.PinnedFiles) > 0 {
+			pinned = append(pinned, db)
+		}
+	}
+	return pinned
 }
 
 func RemTorrent(hash metainfo.Hash) {

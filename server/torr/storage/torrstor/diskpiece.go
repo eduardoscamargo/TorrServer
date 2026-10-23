@@ -25,7 +25,11 @@ func NewDiskPiece(p *Piece) *DiskPiece {
 	ff, err := os.Stat(name)
 	if err == nil {
 		p.Size = ff.Size()
-		p.Complete = ff.Size() == p.cache.pieceLength
+		expected := p.cache.pieceLength
+		if p.Id == p.cache.pieceCount-1 {
+			expected = p.cache.torrentLength - int64(p.Id)*p.cache.pieceLength
+		}
+		p.Complete = ff.Size() == expected
 		p.Accessed = ff.ModTime().Unix()
 	}
 	return &DiskPiece{piece: p, name: name}

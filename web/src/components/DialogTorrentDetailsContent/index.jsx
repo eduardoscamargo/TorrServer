@@ -252,6 +252,7 @@ export default function DialogTorrentDetailsContent({ closeDialog, torrent }) {
               <Table
                 hash={hash}
                 playableFileList={playableFileList}
+                otherFileList={torrentFileList?.filter(({ path }) => !isFilePlayable(path))}
                 viewedFileList={viewedFileList}
                 selectedSeason={selectedSeason}
                 seasonAmount={seasonAmount}

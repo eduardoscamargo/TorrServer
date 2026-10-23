@@ -70,7 +70,10 @@ type TorrentStatus struct {
 }
 
 type TorrentFileStat struct {
-	Id     int    `json:"id,omitempty"`
-	Path   string `json:"path,omitempty"`
-	Length int64  `json:"length,omitempty"`
+	Id         int    `json:"id,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Length     int64  `json:"length,omitempty"`
+	Pinned     bool   `json:"pinned,omitempty"`
+	Downloaded int64  `json:"downloaded,omitempty"`
+	Complete   bool   `json:"complete,omitempty"`
 }

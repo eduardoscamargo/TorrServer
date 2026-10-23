@@ -19,6 +19,19 @@ type tsFiles struct {
 func AddTorrentDB(torr *Torrent) {
 	t := new(settings.TorrentDB)
 	t.TorrentSpec = torr.TorrentSpec
+	torr.muTorrent.Lock()
+	loadedPins := torr.pinnedFiles != nil
+	for id := range torr.pinnedFiles {
+		t.PinnedFiles = append(t.PinnedFiles, id)
+	}
+	torr.muTorrent.Unlock()
+	if !loadedPins {
+		if db := GetTorrentDB(torr.Hash()); db != nil {
+			for id := range db.pinnedFiles {
+				t.PinnedFiles = append(t.PinnedFiles, id)
+			}
+		}
+	}
 	t.Title = torr.Title
 	t.Category = torr.Category
 	if torr.Data == "" {
@@ -69,6 +82,10 @@ func GetTorrentDB(hash metainfo.Hash) *Torrent {
 			torr.Size = db.Size
 			torr.Data = db.Data
 			torr.Stat = state.TorrentInDB
+			torr.pinnedFiles = make(map[int]bool)
+			for _, id := range db.PinnedFiles {
+				torr.pinnedFiles[id] = true
+			}
 			return torr
 		}
 	}
@@ -92,6 +109,10 @@ func ListTorrentsDB() map[metainfo.Hash]*Torrent {
 		torr.Size = db.Size
 		torr.Data = db.Data
 		torr.Stat = state.TorrentInDB
+		torr.pinnedFiles = make(map[int]bool)
+		for _, id := range db.PinnedFiles {
+			torr.pinnedFiles[id] = true
+		}
 		ret[torr.TorrentSpec.InfoHash] = torr
 	}
 	return ret

@@ -19,7 +19,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Action: add, get, set, rem, list, drop
+// Action: add, get, set, rem, list, drop, wipe, pin, unpin
 type torrReqJS struct {
 	requestI
 	Link     string `json:"link,omitempty"`
@@ -29,16 +29,17 @@ type torrReqJS struct {
 	Poster   string `json:"poster,omitempty"`
 	Data     string `json:"data,omitempty"`
 	SaveToDB bool   `json:"save_to_db,omitempty"`
+	FileID   int    `json:"file_id,omitempty"`
 }
 
 // torrents godoc
 //
 //	@Summary		Handle torrents informations
-//	@Description	Allow to list, add, remove, get, set, drop, wipe torrents on server. The action depends of what has been asked.
+//	@Description	Allow to list, add, remove, get, set, drop, wipe torrents, and pin or unpin a file on server. The action depends of what has been asked.
 //
 //	@Tags			API
 //
-//	@Param			request	body	torrReqJS	true	"Torrent request. Available params for action: add, get, set, rem, list, drop, wipe. link required for add, hash required for get, set, rem, drop."
+//	@Param			request	body	torrReqJS	true	"Torrent request. Available actions: add, get, set, rem, list, drop, wipe, pin, unpin. link required for add; hash required for get, set, rem, drop, pin, unpin; file_id required for pin and unpin."
 //
 //	@Accept			json
 //	@Produce		json
@@ -81,11 +82,45 @@ func torrents(c *gin.Context) {
 		{
 			wipeTorrents(c)
 		}
+	case "pin", "unpin":
+		pinTorrentFile(req, c)
 	default:
 		{
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": errors.Errorf("unknown action: %q", req.Action).Error()})
 		}
 	}
+}
+
+func pinTorrentFile(req torrReqJS, c *gin.Context) {
+	if req.Hash == "" || req.FileID < 1 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "hash and positive file_id are required"})
+		return
+	}
+	if set.ReadOnly {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": "pinning requires writable settings"})
+		return
+	}
+	if !set.BTsets.UseDisk || set.BTsets.TorrentsSavePath == "" {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": "pinning requires disk cache storage"})
+		return
+	}
+	tor := torr.GetTorrent(req.Hash)
+	if tor == nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	if tor.Torrent == nil {
+		tor = torr.LoadTorrent(tor)
+	}
+	if tor == nil {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "torrent metadata unavailable"})
+		return
+	}
+	if err := tor.PinFile(req.FileID, req.Action == "pin"); err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, tor.Status())
 }
 
 func addTorrent(req torrReqJS, c *gin.Context) {

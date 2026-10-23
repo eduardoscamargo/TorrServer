@@ -1573,7 +1573,7 @@ const docTemplate = `{
                         "BasicAuth": []
                     }
                 ],
-                "description": "Allow to list, add, remove, get, set, drop, wipe torrents on server. The action depends of what has been asked.",
+                "description": "Allow to list, add, remove, get, set, drop, wipe torrents, and pin or unpin a file on server. The action depends of what has been asked.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1586,7 +1586,7 @@ const docTemplate = `{
                 "summary": "Handle torrents informations",
                 "parameters": [
                     {
-                        "description": "Torrent request. Available params for action: add, get, set, rem, list, drop, wipe. link required for add, hash required for get, set, rem, drop.",
+                        "description": "Torrent request. Available actions: add, get, set, rem, list, drop, wipe, pin, unpin. link required for add; hash required for get, set, rem, drop, pin, unpin; file_id required for pin and unpin.",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1959,6 +1959,9 @@ const docTemplate = `{
                 },
                 "data": {
                     "type": "string"
+                },
+                "file_id": {
+                    "type": "integer"
                 },
                 "hash": {
                     "type": "string"
@@ -2450,6 +2453,12 @@ const docTemplate = `{
         "state.TorrentFileStat": {
             "type": "object",
             "properties": {
+                "complete": {
+                    "type": "boolean"
+                },
+                "downloaded": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -2458,6 +2467,9 @@ const docTemplate = `{
                 },
                 "path": {
                     "type": "string"
+                },
+                "pinned": {
+                    "type": "boolean"
                 }
             }
         },

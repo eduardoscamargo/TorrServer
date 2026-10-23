@@ -1,4 +1,5 @@
-import { streamHost } from 'utils/Hosts'
+import { streamHost, torrentsHost } from 'utils/Hosts'
+import axios from 'axios'
 import isEqual from 'lodash/isEqual'
 import { humanizeSize, detectStandaloneApp, isMacOS, isAppleDevice } from 'utils/Utils'
 import ptt from 'parse-torrent-title'
@@ -16,7 +17,7 @@ import { externalLink, useExternalMediaBase } from 'utils/MediaBase'
 import VideoPlayer from '../../VideoPlayer'
 import { TableStyle, ShortTableWrapper, ShortTable } from './style'
 
-const { memo, useState } = require('react')
+const { memo, useEffect, useState } = require('react')
 
 // russian episode detection support
 ptt.addHandler('episode', /(\d{1,4})[- |. ]серия|серия[- |. ](\d{1,4})/i, {
@@ -30,9 +31,60 @@ ptt.addHandler('season', /сезон[- |. ](\d{1,3})|(\d{1,3})[- |. ]сезон/
 })
 
 const Table = memo(
-  ({ playableFileList, viewedFileList, selectedSeason, seasonAmount, hash }) => {
+  ({ playableFileList, otherFileList, viewedFileList, selectedSeason, seasonAmount, hash }) => {
     const { t } = useTranslation()
     const [unsupportedPlayers, setUnsupportedPlayers] = useState({})
+    const [pinState, setPinState] = useState({})
+    const [pinError, setPinError] = useState('')
+    useEffect(() => {
+      let active = true
+      const refresh = async () => {
+        try {
+          const { data } = await axios.post(torrentsHost(), {
+            action: 'get',
+            hash,
+          })
+          if (active) setPinState(Object.fromEntries((data.file_stats || []).map(file => [file.id, file])))
+        } catch (_) {
+          /* torrent may have been removed */
+        }
+      }
+      refresh()
+      const timer = setInterval(refresh, 2000)
+      return () => {
+        active = false
+        clearInterval(timer)
+      }
+    }, [hash])
+    const togglePin = async (id, pinned) => {
+      try {
+        setPinError('')
+        const { data } = await axios.post(torrentsHost(), {
+          action: pinned ? 'unpin' : 'pin',
+          hash,
+          file_id: id,
+        })
+        setPinState(Object.fromEntries((data.file_stats || []).map(file => [file.id, file])))
+      } catch (error) {
+        setPinError(error.response?.data?.error || error.message)
+      }
+    }
+    const pinControl = (id, length) => {
+      const file =
+        pinState[id] || playableFileList?.find(item => item.id === id) || otherFileList?.find(item => item.id === id)
+      return (
+        <>
+          <Button onClick={() => togglePin(id, !!file?.pinned)} variant='outlined' color='primary' size='small'>
+            {file?.pinned ? t('UnpinFile') : t('PinFile')}
+          </Button>
+          {file?.pinned && (
+            <span aria-live='polite'>
+              {file.complete ? t('FileComplete') : `${humanizeSize(file.downloaded || 0)} / ${humanizeSize(length)}`}
+            </span>
+          )}
+        </>
+      )
+    }
     const gstRuntime = useGStreamerRuntime()
     const mediaBase = useExternalMediaBase()
     const preloadBuffer = fileId => fetch(`${streamHost()}?link=${hash}&index=${fileId}&preload`)
@@ -68,10 +120,28 @@ const Table = memo(
       !isStandalone ||
       (!(isApple && isInfuseUsed) && !(isApple && isSenPlayerUsed) && !isVlcUsed && !(isMac && isIinaUsed))
 
+    const otherFilesSection = otherFileList?.length ? (
+      <section style={{ marginTop: '24px' }}>
+        <h3>{t('OtherFiles')}</h3>
+        {otherFileList.map(({ id, path, length }) => (
+          <div key={id} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+            <span style={{ overflowWrap: 'anywhere', flex: 1 }}>
+              {path} ({humanizeSize(length)})
+            </span>
+            {pinControl(id, length)}
+          </div>
+        ))}
+      </section>
+    ) : null
+
     return !playableFileList?.length ? (
-      'No playable files in this torrent'
+      <>
+        {pinError && <div role='alert'>{pinError}</div>}
+        {otherFilesSection || 'No playable files in this torrent'}
+      </>
     ) : (
       <>
+        {pinError && <div role='alert'>{pinError}</div>}
         <TableStyle>
           <thead>
             <tr>
@@ -111,6 +181,7 @@ const Table = memo(
                         <Button onClick={() => preloadBuffer(id)} variant='outlined' color='primary' size='small'>
                           {t('Preload')}
                         </Button>
+                        {pinControl(id, length)}
                         {isApple && isInfuseUsed && (
                           <a style={{ textDecoration: 'none' }} href={infuseLink}>
                             <Button style={{ width: '100%' }} variant='outlined' color='primary' size='small'>
@@ -230,6 +301,7 @@ const Table = memo(
                     <Button onClick={() => preloadBuffer(id)} variant='outlined' color='primary' size='small'>
                       {t('Preload')}
                     </Button>
+                    {pinControl(id, length)}
 
                     {isApple && isInfuseUsed && (
                       <a style={{ textDecoration: 'none' }} href={infuseLink}>
@@ -293,6 +365,7 @@ const Table = memo(
             )
           })}
         </ShortTableWrapper>
+        {otherFilesSection}
       </>
     )
   },

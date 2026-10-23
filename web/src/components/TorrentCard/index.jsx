@@ -58,7 +58,10 @@ const Transition = forwardRef((props, ref) => <Slide direction='up' ref={ref} {.
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 
 const requestTorrentFiles = async (hash, isActive, attemptsLeft = 60) => {
-  const { data: status } = await axios.post(torrentsHost(), { action: 'get', hash })
+  const { data: status } = await axios.post(torrentsHost(), {
+    action: 'get',
+    hash,
+  })
   const files = status?.file_stats || []
   if (!isActive() || files.length || attemptsLeft <= 1) return files
 
@@ -140,7 +143,14 @@ const sameFileList = (left, right) => {
     leftFiles.length === rightFiles.length &&
     leftFiles.every((file, index) => {
       const other = rightFiles[index]
-      return file.id === other?.id && file.path === other.path && file.length === other.length
+      return (
+        file.id === other?.id &&
+        file.path === other.path &&
+        file.length === other.length &&
+        file.pinned === other.pinned &&
+        file.downloaded === other.downloaded &&
+        file.complete === other.complete
+      )
     })
   )
 }
@@ -418,7 +428,13 @@ const Torrent = ({ torrent }) => {
                   getContentAnchorEl={null}
                   anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                   transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                  PaperProps={{ style: { maxHeight: '65vh', width: 420, maxWidth: 'calc(100vw - 32px)' } }}
+                  PaperProps={{
+                    style: {
+                      maxHeight: '65vh',
+                      width: 420,
+                      maxWidth: 'calc(100vw - 32px)',
+                    },
+                  }}
                 >
                   {audioMenuTracks.map((track, ordinal) => {
                     const label = audioTrackLabel(track, ordinal)
@@ -462,7 +478,13 @@ const Torrent = ({ torrent }) => {
                 getContentAnchorEl={null}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                PaperProps={{ style: { maxHeight: '65vh', width: 420, maxWidth: 'calc(100vw - 32px)' } }}
+                PaperProps={{
+                  style: {
+                    maxHeight: '65vh',
+                    width: 420,
+                    maxWidth: 'calc(100vw - 32px)',
+                  },
+                }}
               >
                 {availablePlayers.map(player => (
                   <MenuItem

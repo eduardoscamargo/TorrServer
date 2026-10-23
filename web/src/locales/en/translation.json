@@ -197,6 +197,10 @@
   "Play": "Play",
   "Playlist": "Playlist",
   "Preload": "Preload",
+  "PinFile": "Download and keep",
+  "UnpinFile": "Stop keeping",
+  "FileComplete": "Complete",
+  "OtherFiles": "Other files",
   "ProjectSource": "Project GitHub",
   "PWAGuide": {
     "AddToHomeScreen": "Add to Home Screen",

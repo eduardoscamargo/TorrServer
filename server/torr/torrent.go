@@ -56,6 +56,7 @@ type Torrent struct {
 	closed <-chan struct{}
 
 	progressTicker *time.Ticker
+	pinnedFiles    map[int]bool // protected by muTorrent
 }
 
 func NewTorrent(spec *torrent.TorrentSpec, bt *BTServer) (*Torrent, error) {
@@ -162,6 +163,7 @@ func (t *Torrent) WaitInfo() bool {
 				}
 				t.cache = cache
 				cache.SetTorrent(torrent)
+				t.restorePins()
 			}
 		}
 		return true
@@ -299,7 +301,7 @@ func (t *Torrent) expired() bool {
 	t.muTorrent.Lock()
 	stat, expiredTime := t.Stat, t.expiredTime
 	t.muTorrent.Unlock()
-	return t.cache.Readers() == 0 && expiredTime.Before(time.Now()) && (stat == state.TorrentWorking || stat == state.TorrentClosed)
+	return t.cache.Readers() == 0 && !t.cache.HasPins() && expiredTime.Before(time.Now()) && (stat == state.TorrentWorking || stat == state.TorrentClosed)
 }
 
 func (t *Torrent) Files() []*torrent.File {
@@ -439,10 +441,18 @@ func (t *Torrent) Status() *state.TorrentStatus {
 				return utils2.CompareStrings(files[i].Path(), files[j].Path())
 			})
 			for i, f := range files {
+				pinned := t.pinnedFiles[i+1]
+				var downloaded int64
+				if pinned && t.cache != nil {
+					downloaded = t.cache.CompletedPinnedBytes(f.Offset(), f.Length())
+				}
 				st.FileStats = append(st.FileStats, &state.TorrentFileStat{
-					Id:     i + 1, // in web id 0 is undefined
-					Path:   f.Path(),
-					Length: f.Length(),
+					Id:         i + 1, // in web id 0 is undefined
+					Path:       f.Path(),
+					Length:     f.Length(),
+					Pinned:     pinned,
+					Downloaded: downloaded,
+					Complete:   pinned && downloaded == f.Length(),
 				})
 			}
 
